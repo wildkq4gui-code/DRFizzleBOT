@@ -2,10 +2,13 @@ name: Lichess Bot Scheduler
 
 on:
   schedule:
-    # Run every 15 minutes in a UTC window that covers both CST and CDT offsets
-    # This keeps the workflow lightweight while allowing a timezone-aware check
-    - cron: '*/15 11-14 * * 6' # Saturday, UTC 11:00-14:59 every 15 minutes
-    - cron: '*/15 11-14 * * 0' # Sunday, UTC 11:00-14:59 every 15 minutes
+    # Two UTC times covering America/Chicago 07:00 when CST or CDT is in effect.
+    # - 07:00 CST (UTC-6) -> 13:00 UTC
+    # - 07:00 CDT (UTC-5) -> 12:00 UTC
+    - cron: '0 12 * * 6' # Saturday 12:00 UTC (07:00 CDT)
+    - cron: '0 13 * * 6' # Saturday 13:00 UTC (07:00 CST)
+    - cron: '0 12 * * 0' # Sunday 12:00 UTC (07:00 CDT)
+    - cron: '0 13 * * 0' # Sunday 13:00 UTC (07:00 CST)
   workflow_dispatch:
 
 jobs:
@@ -29,6 +32,20 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+
+      - name: Validate LICHESS_API_TOKEN
+        run: |
+          if [ -z "${LICHESS_API_TOKEN:-}" ]; then
+            echo "::error::LICHESS_API_TOKEN is not set. Please add the secret in repository settings.";
+            exit 1;
+          fi
+          echo "Validating LICHESS_API_TOKEN by calling Lichess account endpoint..."
+          status=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $LICHESS_API_TOKEN" https://lichess.org/api/account || true)
+          if [ "$status" -ne 200 ]; then
+            echo "::error::LICHESS_API_TOKEN validation failed (HTTP $status). Please check the secret value.";
+            exit 1;
+          fi
+          echo "LICHESS_API_TOKEN validated."
 
       - name: Check America/Chicago start time
         run: |
