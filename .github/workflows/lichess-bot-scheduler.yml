@@ -1,0 +1,72 @@
+name: Lichess Bot Scheduler
+
+on:
+  schedule:
+    # Run every 15 minutes in a UTC window that covers both CST and CDT offsets
+    # This keeps the workflow lightweight while allowing a timezone-aware check
+    - cron: '*/15 11-14 * * 6' # Saturday, UTC 11:00-14:59 every 15 minutes
+    - cron: '*/15 11-14 * * 0' # Sunday, UTC 11:00-14:59 every 15 minutes
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    name: Run Lichess Bot (3-hour shift)
+    runs-on: ubuntu-latest
+    # 3 hours + small buffer for shutdown
+    timeout-minutes: 185
+    # Prevent overlapping runs; ensure only one scheduler run at a time
+    concurrency:
+      group: lichess-bot-scheduler
+      cancel-in-progress: false
+    env:
+      # Pass the token via repository secret `LICHESS_API_TOKEN`
+      LICHESS_API_TOKEN: ${{ secrets.LICHESS_API_TOKEN }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Check America/Chicago start time
+        run: |
+          dow=$(TZ=America/Chicago date +%u)
+          hour=$(TZ=America/Chicago date +%H)
+          minute=$(TZ=America/Chicago date +%M)
+          echo "Local Chicago time: ${hour}:${minute} (dow=${dow})"
+          # +%u: 1..7 (Mon..Sun) -> Saturday=6 Sunday=7
+          if [ "${dow}" -ne 6 ] && [ "${dow}" -ne 7 ]; then
+            echo "Not weekend in America/Chicago. Exiting."
+            exit 0
+          fi
+          # Start only at 07:00 America/Chicago (exact minute match)
+          # This ensures the job only begins a single shift at local 07:00
+          if [ "${hour}" != "07" ] || [ "${minute}" != "00" ]; then
+            echo "Not 07:00 America/Chicago. Exiting."
+            exit 0
+          fi
+          echo "It's 07:00 America/Chicago on weekend — starting shift."
+
+      - name: Ensure LICHESS_API_TOKEN availability
+        run: |
+          if [ -n "${{ secrets.LICHESS_API_TOKEN }}" ]; then
+            echo "Using repository secret LICHESS_API_TOKEN"
+          elif [ -f config/lichess_api.yml ]; then
+            echo "No secret found — the repo contains `config/lichess_api.yml`. Using that as fallback (not recommended)."
+          else
+            echo "No LICHESS_API_TOKEN secret and no config/lichess_api.yml found. The bot may fail to authenticate." >&2
+          fi
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install berserk python-chess
+
+      - name: Make runner script executable
+        run: chmod +x scripts/run_bot_with_standby.sh
+
+      - name: Run bot for configured shift
+        run: ./scripts/run_bot_with_standby.sh
+        # LICHESS_API_TOKEN is available via env at job level

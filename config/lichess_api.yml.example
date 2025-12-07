@@ -1,0 +1,8 @@
+# Example Lichess API key configuration
+# DO NOT commit your real API token to version control.
+# Recommended: set a GitHub Actions secret named `LICHESS_API_TOKEN`.
+
+lichess:
+  # Replace with your lichess API token if you must keep a local file.
+  # Prefer using the Actions secret `LICHESS_API_TOKEN` instead of this file.
+  api_token: ""
