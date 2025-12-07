@@ -12,6 +12,7 @@ import random
 import threading
 import logging
 import signal
+import re
 import requests
 import chess
 import chess.engine
@@ -376,10 +377,26 @@ class LichessBot:
 
 def main():
     api_token = os.environ.get('LICHESS_API_TOKEN')
-    
+
+    # If environment variable is not set, attempt to read a local config fallback.
     if not api_token:
-        logger.error("LICHESS_API_TOKEN environment variable is not set!")
-        logger.error("Please set your Lichess API token.")
+        cfg_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'lichess_api.yml')
+        cfg_path = os.path.normpath(cfg_path)
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        m = re.search(r"api_token:\s*[\"']?([^\"'\n\r]+)[\"']?", line)
+                        if m:
+                            api_token = m.group(1).strip()
+                            logger.info("Loaded LICHESS_API_TOKEN from config/lichess_api.yml (fallback).")
+                            break
+            except Exception as e:
+                logger.error(f"Failed to read config fallback at {cfg_path}: {e}")
+
+    if not api_token:
+        logger.error("LICHESS_API_TOKEN not found in environment or config file.")
+        logger.error("Please set your Lichess API token (prefer repository secret `LICHESS_API_TOKEN`).")
         sys.exit(1)
     
     bot = LichessBot(api_token)
